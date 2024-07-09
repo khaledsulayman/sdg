@@ -7,11 +7,13 @@ from typing import Optional
 import json
 import os
 import time
+import yaml
 
 # Third Party
 # instructlab - All of these need to go away (other than sdg) - issue #6
 from datasets import Dataset
 from instructlab.utils import get_sysprompt
+from sdg.utils import datamixing
 import httpx
 import openai
 
@@ -202,6 +204,7 @@ def generate_data(
     tls_client_passwd: Optional[str] = None,
     # TODO need to update the CLI to specify which pipeline to use (simple or full at the moment)
     pipeline: Optional[str] = "simple",
+    recipe: Path = Path(),
 ):
     generate_start = time.time()
 
@@ -303,3 +306,28 @@ def generate_data(
 
     generate_duration = time.time() - generate_start
     logger.info(f"Generation took {generate_duration:.2f}s")
+
+    logger.info("TODO mixing")
+
+    with open(recipe, "r") as fp:
+        recipe = yaml.safe_load(fp)
+
+    if recipe["sys_prompt"]:
+        sys_prompt = recipe.get("sys_prompt", None).strip()
+
+    if recipe["drop_columns"]:
+        drop_cols = recipe.get("drop_columns", None)
+
+    datasets = []
+    for dataset in recipe["datasets"]:
+        path = dataset["path"]
+        sampling_ratio = dataset["sampling_ratio"]
+        ds = datamixing.load_ds(path, sampling_ratio)
+        datasets.append(ds)
+
+    ds = datamixing.concatenate_datasets(datasets)
+    ds = ds.map(
+        datamixing.add_system_message, fn_kwargs={"sys_prompt": sys_prompt}, num_proc=32
+    )
+
+    datamixing.save(ds, drop_cols, recipe["save_dir"], recipe["save_name"])
