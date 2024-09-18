@@ -10,6 +10,8 @@ import re
 import tempfile
 
 # Third Party
+from docling.document_converter import DocumentConverter
+from docling.datamodel.base_models import PipelineOptions
 from instructlab.schema.taxonomy import DEFAULT_TAXONOMY_FOLDERS as TAXONOMY_FOLDERS
 from instructlab.schema.taxonomy import (
     TaxonomyMessageFormat,
@@ -270,12 +272,25 @@ def read_taxonomy_leaf_nodes(taxonomy, taxonomy_base, yaml_rules):
     return leaf_nodes
 
 
+def _parse_pdf_to_md(document):
+    converter = DocumentConverter(pipeline_options=PipelineOptions())
+    result = converter.convert_single(document)
+    return result.output.export_to_markdown()
+
+
+def _ensure_markdown(document: str):
+    if document.endswith(".pdf"):
+        return _parse_pdf_to_md(document)
+    return document
+
+
 def _knowledge_leaf_node_to_samples(leaf_node, server_ctx_size, chunk_word_count):
     samples = []
+    documents = [_ensure_markdown(d) for d in leaf_node[0]["document"]]
     # document is the same for the whole leaf node
     chunks = (
         chunking.chunk_document(
-            documents=leaf_node[0]["document"],
+            documents=documents,
             server_ctx_size=server_ctx_size,
             chunk_word_count=chunk_word_count,
         )
