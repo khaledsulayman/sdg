@@ -79,6 +79,10 @@ def add_heading_formatting(text):
     text = text.split(".")
     
     # Change this from hardcoded to something more flexible
+
+    # Docling fails at identifying the header and gives a single word instead.
+    # Hence we split the sentences and check if header was mistakenly identified as a paragaraph.
+
     if len(text) > 1 and len(text[0].split(" ")) < 3:
         text = f"**{text[0]}**" + ".".join(text[1:])
     else:
@@ -277,6 +281,7 @@ class DocProcessor:
     def __init__(
         self,
         parsed_doc_dir: Path,
+
         tokenizer_name: str,
         user_config_path: Path = None,
     ):
@@ -294,6 +299,7 @@ class DocProcessor:
         self.docling_jsons = list(self.parsed_doc_dir.glob("*.json"))
         self.tokenizer = create_tokenizer(tokenizer_name)
 
+
     def _path_validator(self, path) -> Path:
         """
         Validate the path and return a Path object.
@@ -301,6 +307,7 @@ class DocProcessor:
             path (str): Path to be validated.
         Returns:
             Path: Path object.
+
         """
         if isinstance(path, str):
             path = Path(path)
@@ -322,11 +329,14 @@ class DocProcessor:
                 return yaml.safe_load(f)
         return {}
 
+
+
     def _process_parsed_docling_json(self, json_fp: Path) -> Dataset:
         """
         Process the parsed docling json file and return a dataset.
         Args:
             json_fp (Path): Path to the parsed docling json file.
+
         Returns:
             Dataset: Dataset object.
         """
@@ -335,6 +345,7 @@ class DocProcessor:
             data = json.load(f)
 
         file_name = json_fp.stem
+
         chunks = build_chunks_from_docling_json(
             data,
             max_token_per_chunk=500,
@@ -359,6 +370,7 @@ class DocProcessor:
             Dataset: Dataset object with ICLS label.
         """
         icl = self.user_config.get("seed_examples", [])
+
         chunked_document_all_icl = []
         for icl_ in icl:
             chunked_document_all_icl.append(
