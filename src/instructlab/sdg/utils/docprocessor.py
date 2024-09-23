@@ -39,14 +39,23 @@ def fuse_texts(text_list, short_length_threshold=100):
 
     return fused_texts
 
-def create_tokenizer():
+def create_tokenizer(model_name: str):
     """
-    Create a tokenizer instance from a pre-trained model.
+    Create a tokenizer instance from a pre-trained model or a local directory.
+    
+    Args:
+        model_name (str): The name of the model or the path to the local directory.
+
     Returns:
         AutoTokenizer: The tokenizer instance.
     """
-    return AutoTokenizer.from_pretrained("instructlab/granite-7b-lab") # model name needs to be fixed
-
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        logger.info(f"Successfully loaded tokenizer from: {model_name}")
+        return tokenizer
+    except Exception as e:
+        logger.error(f"Failed to load tokenizer from {model_name}: {str(e)}")
+        raise
 
 def get_token_count(text, tokenizer):
     """
@@ -59,7 +68,6 @@ def get_token_count(text, tokenizer):
     """
     return len(tokenizer.tokenize(text))
 
-
 def add_heading_formatting(text):
     """
     Add heading formatting to the text if the first part is short.
@@ -71,15 +79,11 @@ def add_heading_formatting(text):
     text = text.split(".")
     
     # Change this from hardcoded to something more flexible
-    # Docling fails at identifying the header and gives a single word instead.
-    # Hence we split the sentences and check if header was mistakenly identified as a paragaraph.
-
     if len(text) > 1 and len(text[0].split(" ")) < 3:
         text = f"**{text[0]}**" + ".".join(text[1:])
     else:
         text = ".".join(text)
     return text
-
 
 def generate_table_from_parsed_rep(item):
     """
@@ -110,7 +114,6 @@ def generate_table_from_parsed_rep(item):
         table_text += f"\nCaption: {caption}\n"
     return table_text
 
-
 def get_table(json_book, table_ref):
     """
     Retrieve a table from a document based on a reference string.
@@ -123,7 +126,6 @@ def get_table(json_book, table_ref):
     parts = table_ref.split("/")
     table_text = generate_table_from_parsed_rep(json_book[parts[1]][int(parts[2])])
     return table_text
-
 
 def get_table_page_number(json_book, idx):
     """
@@ -152,7 +154,6 @@ def get_table_page_number(json_book, idx):
         return prev_page_num
     elif next_page_num is not None:
         return next_page_num
-
 
 def build_chunks_from_docling_json(
     json_book,
@@ -261,7 +262,6 @@ def build_chunks_from_docling_json(
         document_chunks.append("\n\n".join(current_buffer))
     return document_chunks
 
-
 def safe_concatenate_datasets(datasets: list):
     """
     Concatenate datasets safely, ignoring any datasets that are None or empty.
@@ -277,15 +277,22 @@ class DocProcessor:
     def __init__(
         self,
         parsed_doc_dir: Path,
-        tokenizer: str = "instructlab/granite-7b-lab",
+        tokenizer_name: str,
         user_config_path: Path = None,
     ):
+        """
+        Initialize the DocProcessor.
+        Args:
+            parsed_doc_dir (Path): Directory containing parsed docling JSON files.
+            tokenizer_name (str): The name of the model or path to the tokenizer.
+            user_config_path (Path, optional): Path to the user configuration YAML file.
+        """
         self.parsed_doc_dir = self._path_validator(parsed_doc_dir)
         self.user_config = self._load_user_config(
-            self._path_validator(user_config_path)
+            self._path_validator(user_config_path) if user_config_path else None
         )
         self.docling_jsons = list(self.parsed_doc_dir.glob("*.json"))
-        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer)
+        self.tokenizer = create_tokenizer(tokenizer_name)
 
     def _path_validator(self, path) -> Path:
         """
@@ -293,7 +300,7 @@ class DocProcessor:
         Args:
             path (str): Path to be validated.
         Returns:
-            Path`: Path object.
+            Path: Path object.
         """
         if isinstance(path, str):
             path = Path(path)
@@ -309,15 +316,17 @@ class DocProcessor:
         Returns:
             dict: User config dictionary.
         """
-        # load user config as yaml
-        with open(user_config_path, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f)
+        if user_config_path:
+            # load user config as yaml
+            with open(user_config_path, "r", encoding="utf-8") as f:
+                return yaml.safe_load(f)
+        return {}
 
     def _process_parsed_docling_json(self, json_fp: Path) -> Dataset:
         """
         Process the parsed docling json file and return a dataset.
         Args:
-            json_fp (str): Path to the parsed docling json file.
+            json_fp (Path): Path to the parsed docling json file.
         Returns:
             Dataset: Dataset object.
         """
@@ -325,7 +334,7 @@ class DocProcessor:
         with open(json_fp, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        file_name = json_fp.name.split(".")[0]
+        file_name = json_fp.stem
         chunks = build_chunks_from_docling_json(
             data,
             max_token_per_chunk=500,
@@ -335,10 +344,9 @@ class DocProcessor:
         return Dataset.from_dict(
             {
                 "document": chunks,
-                "document_outline": [self.user_config["document_outline"]]
-                * len(chunks),
+                "document_outline": [self.user_config.get("document_outline", "")] * len(chunks),
                 "document_title": [file_name] * len(chunks),
-                "domain": [self.user_config["domain"]] * len(chunks),
+                "domain": [self.user_config.get("domain", "")] * len(chunks),
             }
         )
 
@@ -346,11 +354,11 @@ class DocProcessor:
         """
         Add the ICLS label to the dataset.
         Args:
-            dataset (Dataset): Dataset object.
+            chunked_document (Dataset): Dataset object.
         Returns:
             Dataset: Dataset object with ICLS label.
         """
-        icl = self.user_config["seed_examples"]
+        icl = self.user_config.get("seed_examples", [])
         chunked_document_all_icl = []
         for icl_ in icl:
             chunked_document_all_icl.append(
