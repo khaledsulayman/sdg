@@ -17,6 +17,7 @@ import yaml
 # First Party
 from instructlab.sdg.checkpointing import Checkpointer
 from instructlab.sdg.utils import pandas
+from instructlab.sdg.utils.taxonomy import kprintds
 
 # Local
 from . import filterblock, importblock, llmblock, utilblocks
@@ -137,6 +138,7 @@ class Pipeline:
         dataset: the input dataset
         checkpoint_name: unique subdir name for the checkpoint within checkpoint_dir
         """
+        kprintds(dataset, "in function Pipeline.generate")
 
         # The checkpointer allows us to resume from where we left off
         # Saving the output of pipe instances along the way
@@ -145,8 +147,12 @@ class Pipeline:
             # Separate checkpoints with sub directories
             checkpoint_dir = os.path.join(self.ctx.checkpoint_dir, checkpoint_name)
 
+        print("THIS IS KHALED IN PIPELINE GENERATE ABT TO CHECKPOINT")
+
         checkpointer = Checkpointer(checkpoint_dir, self.ctx.save_freq)
         dataset, pre_generated_data = checkpointer.load(dataset)
+
+        print("THIS IS KHALED IN PIPELINE GENERATE SUCCESSFULLY CHECKPOINTED(?)")
 
         # If not batching, simply delegate to _generate_single
         if not self.ctx.batching_enabled:
@@ -183,6 +189,7 @@ class Pipeline:
 
     def _generate_single(self, dataset) -> Dataset:
         """Generate a single dataset by running the pipeline steps."""
+        kprintds(dataset, "in function Pipeline._generate_single")
         for block_prop in self.chained_blocks:
             # Initialize arguments for error handling to None
             block, block_name, block_type = None, None, None
